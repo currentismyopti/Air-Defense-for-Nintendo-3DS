@@ -1,0 +1,57 @@
+# Builds AirDefense.cia in the cloud and publishes it with a QR code for FBI's Remote Install.
+name: Build 3DS
+on:
+  push:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    container: devkitpro/devkitarm:latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Find the game folder
+        run: |
+          # Works whether the files are at the top of the repository or inside a folder.
+          dir=$(dirname "$(find . -path '*/meta/app.rsf' -not -path './.git/*' | head -n 1)")
+          dir=$(dirname "$dir")
+          echo "Game folder: $dir"
+          echo "GAME_DIR=$dir" >> "$GITHUB_ENV"
+      - name: Tools for the .cia
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          apt-get update && apt-get install -y python3 python3-pip
+          cd "$GAME_DIR" && python3 tools/get_tools.py
+          pip3 install --break-system-packages qrcode pillow || pip3 install qrcode pillow
+      - name: Build
+        run: |
+          cd "$GAME_DIR"
+          make
+          make cia
+          cp AirDefense.cia AirDefense.3dsx "$GITHUB_WORKSPACE/"
+      - name: QR code
+        run: |
+          python3 -c "import qrcode; qrcode.make('https://github.com/${{ github.repository }}/releases/download/latest/AirDefense.cia').save('AirDefense-QR.png')"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: AirDefense
+          path: |
+            AirDefense.cia
+            AirDefense.3dsx
+            AirDefense-QR.png
+      - name: Publish release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: latest
+          name: Air Defense Command (3DS)
+          body: |
+            Install with FBI: **Remote Install > Scan QR Code** and scan `AirDefense-QR.png`,
+            or **Manually enter URL**: `https://github.com/${{ github.repository }}/releases/download/latest/AirDefense.cia`
+          files: |
+            AirDefense.cia
+            AirDefense.3dsx
+            AirDefense-QR.png
